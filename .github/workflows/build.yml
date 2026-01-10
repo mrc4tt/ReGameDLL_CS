@@ -362,30 +362,58 @@ jobs:
         id: update
         run: |
           cd amxmodx-repo
-          
-          FILE="configs/games/game.cstrike.txt"
+          FILE="gamedata/modules.games/game.cstrike.txt"
           CRC32_HEX="${{ steps.crc.outputs.crc32_hex }}"
-          
+
           if [ ! -f "$FILE" ]; then
             echo "Error: $FILE not found in AMX MOD X repo!"
             exit 1
           fi
-          
+
           echo "Original file content (server section):"
           sed -n '/"server"/,/"client"/p' "$FILE"
-          
-          # Backup original file
+
           cp "$FILE" "$FILE.bak"
+
+          python3 - <<'PYCODE'
+          import re, pathlib
           
-          # Use sed to find and replace the linux CRC line under server section
-          # This looks for the pattern: "linux" "HEXVALUE" // cstrike/dlls/cs.so
-          sed -i '/"server"/,/"client"/ s|"linux"[[:space:]]*"[0-9A-Fa-f]*"[[:space:]]*//[[:space:]]*cstrike/dlls/cs.so|"linux" "'"$CRC32_HEX"'" // cstrike/dlls/cs.so|' "$FILE"
+          path = pathlib.Path("gamedata/modules.games/game.cstrike.txt")
+          text = path.read_text()
+          crc = "${{ steps.crc.outputs.crc32_hex }}"
           
+          server_block = re.search(r'("server"\s*\{)(.*?)(\})', text, flags=re.S)
+          if not server_block:
+              raise SystemExit("server block not found")
+          
+          block_body = server_block.group(2)
+          linux_line_re = re.compile(r'"linux"\s*"[0-9A-Fa-f]+"\s*//\s*cstrike/dlls/cs\.so')
+          
+          if linux_line_re.search(block_body):
+              new_body = linux_line_re.sub(f'"linux" "{crc}" // cstrike/dlls/cs.so', block_body)
+              action = "replaced"
+          else:
+              # insert after the opening brace inside server block
+              lines = block_body.splitlines()
+              indent = "    "  # default indent for entries
+              for line in lines:
+                  m = re.match(r'(\s+)', line)
+                  if m:
+                      indent = m.group(1)
+                      break
+              lines.insert(0, f"{indent}\"linux\" \"{crc}\" // cstrike/dlls/cs.so")
+              new_body = "\n".join(lines)
+              action = "inserted"
+          
+          new_text = text[:server_block.start(2)] + new_body + text[server_block.end(2):]
+          path.write_text(new_text)
+          print(f"linux CRC line {action}")
+          PYCODE
+
           echo ""
           echo "Updated file content (server section):"
           sed -n '/"server"/,/"client"/p' "$FILE"
-          
-          # Check if file was modified
+
           if diff "$FILE.bak" "$FILE" > /dev/null; then
             echo "No changes detected in $FILE"
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -393,7 +421,7 @@ jobs:
             echo "File successfully updated!"
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
-          
+
           rm "$FILE.bak"
       
       - name: Commit and push changes to AMX MOD X
@@ -404,7 +432,7 @@ jobs:
           git config user.name "ReGameDLL_CS Build Bot"
           git config user.email "actions@github.com"
           
-          git add configs/games/game.cstrike.txt
+          git add gamedata/modules.games/game.cstrike.txt
           
           BUILD_NR="${{ github.run_number }}"
           CRC32_HEX="${{ steps.crc.outputs.crc32_hex }}"
