@@ -140,7 +140,9 @@ endif()
 
 if (NOT DEBUG)
 	set(LINK_FLAGS "${LINK_FLAGS} \
-		-Wl,-gc-sections -Wl,--version-script=\"${PROJECT_SOURCE_DIR}/../version_script.lds\"")
+		-Wl,-gc-sections -Wl,--version-script=\"${PROJECT_SOURCE_DIR}/../version_script.lds\" -Wl,-z,noexecstack")
+else()
+	set(LINK_FLAGS "${LINK_FLAGS} -Wl,-z,noexecstack")
 endif()
 
 set(PROJECT_SRC_DIR

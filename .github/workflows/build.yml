@@ -314,6 +314,118 @@ jobs:
           name: linux32
           path: publish/*
 
+  update-amxmodx-crc:
+    name: 'Update AMX MOD X CRC'
+    runs-on: ubuntu-latest
+    needs: [linux]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Download linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux32
+          
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-zip-perl jq
+      
+      - name: Calculate CRC32 checksum
+        id: crc
+        run: |
+          if [ ! -f "bin/linux32/cstrike/dlls/cs.so" ]; then
+            echo "Error: cs.so not found!"
+            exit 1
+          fi
+          
+          # Calculate CRC32
+          CRC32=$(crc32 bin/linux32/cstrike/dlls/cs.so)
+          echo "CRC32 checksum: $CRC32"
+          
+          # Convert to uppercase hex format
+          CRC32_HEX=$(echo "$CRC32" | tr '[:lower:]' '[:upper:]')
+          echo "crc32_hex=$CRC32_HEX" >> $GITHUB_OUTPUT
+          echo "CRC32 HEX: $CRC32_HEX"
+          
+          # Display file info
+          ls -lh bin/linux32/cstrike/dlls/cs.so
+      
+      - name: Checkout AMX MOD X fork
+        uses: actions/checkout@v4
+        with:
+          repository: mrc4tt/amxmodx
+          token: ${{ secrets.AMXMODX_PAT }}
+          path: amxmodx-repo
+      
+      - name: Update game.cstrike.txt with new CRC
+        id: update
+        run: |
+          cd amxmodx-repo
+          
+          FILE="configs/games/game.cstrike.txt"
+          CRC32_HEX="${{ steps.crc.outputs.crc32_hex }}"
+          
+          if [ ! -f "$FILE" ]; then
+            echo "Error: $FILE not found in AMX MOD X repo!"
+            exit 1
+          fi
+          
+          echo "Original file content (server section):"
+          sed -n '/"server"/,/"client"/p' "$FILE"
+          
+          # Backup original file
+          cp "$FILE" "$FILE.bak"
+          
+          # Use sed to find and replace the linux CRC line under server section
+          # This looks for the pattern: "linux" "HEXVALUE" // cstrike/dlls/cs.so
+          sed -i '/"server"/,/"client"/ s|"linux"[[:space:]]*"[0-9A-Fa-f]*"[[:space:]]*//[[:space:]]*cstrike/dlls/cs.so|"linux" "'"$CRC32_HEX"'" // cstrike/dlls/cs.so|' "$FILE"
+          
+          echo ""
+          echo "Updated file content (server section):"
+          sed -n '/"server"/,/"client"/p' "$FILE"
+          
+          # Check if file was modified
+          if diff "$FILE.bak" "$FILE" > /dev/null; then
+            echo "No changes detected in $FILE"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "File successfully updated!"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          rm "$FILE.bak"
+      
+      - name: Commit and push changes to AMX MOD X
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          cd amxmodx-repo
+          
+          git config user.name "ReGameDLL_CS Build Bot"
+          git config user.email "actions@github.com"
+          
+          git add configs/games/game.cstrike.txt
+          
+          BUILD_NR="${{ github.run_number }}"
+          CRC32_HEX="${{ steps.crc.outputs.crc32_hex }}"
+          
+          git commit -m "chore: Update server CRC from ReGameDLL_CS build ${BUILD_NR} - Server: ${CRC32_HEX}"
+          git push
+      
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## AMX MOD X CRC Update Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CRC32 Checksum:** ${{ steps.crc.outputs.crc32_hex }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.update.outputs.changed }}" = "true" ]; then
+            echo "- **AMX MOD X Updated:** ✅ Yes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **AMX MOD X Updated:** ⏭️ No changes needed" >> $GITHUB_STEP_SUMMARY
+          fi
+
   publish:
     name: 'Publish'
     runs-on: ubuntu-latest
