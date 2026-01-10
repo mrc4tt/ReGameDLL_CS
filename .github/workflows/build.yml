@@ -128,19 +128,6 @@ jobs:
       - name: Show version
         run: echo "Version is ${{ steps.get_version.outputs.version }}"
 
-      - name: Import PFX and sign
-        if: github.event_name != 'pull_request'
-        env:
-          KEY_PFX_PASS: ${{ secrets.KEY_PFX_PASS }}
-        # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
-        run: |
-               $pfxBase64 = "${{ secrets.KEY_PFX_B64 }}"
-               [IO.File]::WriteAllBytes("${{ github.workspace }}\signing-cert.pfx", [Convert]::FromBase64String($pfxBase64))
-               certutil -f -p "${{ secrets.KEY_PFX_PASS }}" -importPFX "${{ github.workspace }}\signing-cert.pfx"
-               & 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\signtool.exe' sign /a /f "${{ github.workspace }}\signing-cert.pfx"  /p $env:KEY_PFX_PASS /d "Regamedll_CS is a result of reverse engineering of original library mod HLDS (build 6153beta) using DWARF debug info embedded into linux version of HLDS, cs.so" /du "https://rehlds.dev/" /tr "http://timestamp.digicert.com" /td sha256 /fd sha256 /v ${{ github.workspace }}\publish\bin\win32\cstrike\dlls\mp.dll
-               Remove-Item -Recurse -Force "${{ github.workspace }}\signing-cert.pfx"
-        shell: "pwsh"
-
       - name: Edit resources at windows binaries
         run: |
           rcedit ${{ github.workspace }}\publish\bin\win32\cstrike\dlls\mp.dll --set-version-string ProductName "Regamedll_CS - mp.dll" --set-file-version "${{ steps.get_version.outputs.version }}" --set-product-version "${{ steps.get_version.outputs.version }}" --set-version-string FileDescription "Regamedll_CS (mp.dll) - provide more stable (than official) version of Counter-Strike game with extended API for mods and plugins, Commit: $env:GITHUB_SHA" --set-version-string "Comments" "Regamedll_CS is a result of reverse engineering of original library mod HLDS (build 6153beta) using DWARF debug info embedded into linux version of HLDS, cs.so. Commit: $env:GITHUB_SHA" --set-version-string CompanyName "ReHLDS Dev Team" --set-version-string LegalCopyright "Copyright 2025 Valve, ReHLDS DevTeam" --set-icon regamedll/msvc/icon.ico
@@ -215,19 +202,20 @@ jobs:
           fetch-depth: 0
 
       - name: GPG Import
+        continue-on-error: true
         run: |
-          echo "${{ secrets.PUB_ASC }}" > "${{ secrets.PUB_ASC_FILE }}"
-          echo "${{ secrets.KEY_ASC }}" > "${{ secrets.KEY_ASC_FILE }}"
+          echo "${{ secrets.PUB_ASC }}" > pub.asc
+          echo "${{ secrets.KEY_ASC }}" > key.asc
 
           # Import the public key
-          gpg --batch --yes --import "${{ secrets.PUB_ASC_FILE }}"
+          gpg --batch --yes --import pub.asc
           if [[ $? -ne 0 ]]; then
             echo "Error: Failed to import the public key"
             exit 1
           fi
 
           # Import the private key
-          gpg --batch --yes --import "${{ secrets.KEY_ASC_FILE }}"
+          gpg --batch --yes --import key.asc
           if [[ $? -ne 0 ]]; then
             echo "Error: Failed to import the private key"
             exit 2
