@@ -331,11 +331,13 @@ public:
 	virtual int ObjectCaps() { return FCAP_DONT_SAVE; }
 
 public:
+	using CBaseEntity::Spawn;
 	void Spawn(entvars_t *pevOwner);
 };
 
 class CBloodSplat: public CBaseEntity {
 public:
+	using CBaseEntity::Spawn;
 	void Spawn(entvars_t *pevOwner);
 	void Spray();
 };
