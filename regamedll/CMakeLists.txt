@@ -145,6 +145,12 @@ else()
 	set(LINK_FLAGS "${LINK_FLAGS} -Wl,-z,noexecstack")
 endif()
 
+find_program(CCACHE_FOUND ccache)
+if (CCACHE_FOUND)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+    set(ENV{CCACHE_SLOPPINESS} pch_defines,time_macros)
+endif ()
+
 set(PROJECT_SRC_DIR
 	"${PROJECT_SOURCE_DIR}"
 	"${PROJECT_SOURCE_DIR}/engine"
