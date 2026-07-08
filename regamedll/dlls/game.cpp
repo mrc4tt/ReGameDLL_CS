@@ -201,6 +201,8 @@ cvar_t playerid_field          = { "mp_playerid_field", "3", 0, 3.0f, nullptr };
 
 cvar_t knockback               = { "mp_knockback", "170", 0, 170.0f, nullptr };
 
+cvar_t show_bomb_timer         = { "mp_show_bomb_timer", "0", 0, 0.0f, nullptr };
+
 cvar_t knife_wall_sparks       = { "mp_knife_wall_sparks", "0", 0, 0.0f, nullptr };
 
 void GameDLL_Version_f()
@@ -490,6 +492,8 @@ void EXT_FUNC GameDLLInit()
 	CVAR_REGISTER(&flymove_method);
 
 	CVAR_REGISTER(&knockback);
+
+	CVAR_REGISTER(&show_bomb_timer);
 
 	CVAR_REGISTER(&knife_wall_sparks);
 
