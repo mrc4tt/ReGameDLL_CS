@@ -419,6 +419,8 @@ if (CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set(LINK_FLAGS "${LINK_FLAGS} -L${PROJECT_SOURCE_DIR}/lib/linux32")
 endif()
 
+set(LINK_FLAGS "${LINK_FLAGS} -Wl,-z,notext")
+
 set_target_properties(regamedll PROPERTIES
 	COMPILE_FLAGS ${COMPILE_FLAGS}
 	LINK_FLAGS ${LINK_FLAGS}
@@ -426,15 +428,21 @@ set_target_properties(regamedll PROPERTIES
 
 if (XASH_COMPAT)
 	if (CMAKE_SYSTEM_NAME STREQUAL "Android")
-		set_target_properties(regamedll PROPERTIES
+		set(LINK_FLAGS "${LINK_FLAGS} -Wl,-z,notext")
+
+set_target_properties(regamedll PROPERTIES
 			OUTPUT_NAME server)
 	else()
-		set_target_properties(regamedll PROPERTIES
+		set(LINK_FLAGS "${LINK_FLAGS} -Wl,-z,notext")
+
+set_target_properties(regamedll PROPERTIES
 			PREFIX ""
 			OUTPUT_NAME cs${POSTFIX})
 	endif()
 else()
-	set_target_properties(regamedll PROPERTIES
+	set(LINK_FLAGS "${LINK_FLAGS} -Wl,-z,notext")
+
+set_target_properties(regamedll PROPERTIES
 		OUTPUT_NAME cs
 		PREFIX ""
 		POSITION_INDEPENDENT_CODE OFF)
