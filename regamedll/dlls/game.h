@@ -50,6 +50,7 @@ extern cvar_t *g_psv_stopspeed;
 extern cvar_t *g_psv_stepsize;
 extern cvar_t *g_psv_clienttrace;
 extern cvar_t *g_psv_maxvelocity;
+extern cvar_t *g_psv_zmax;
 
 extern cvar_t displaysoundlist;
 extern cvar_t timelimit;

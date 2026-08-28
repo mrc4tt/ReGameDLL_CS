@@ -8257,7 +8257,13 @@ void EXT_FUNC CBasePlayer::__API_HOOK(UpdateStatusBar)()
 	UTIL_MakeVectors(pev->v_angle + pev->punchangle);
 
 	Vector vecSrc = EyePosition();
-	Vector vecEnd = vecSrc + (gpGlobals->v_forward * ((pev->flags & FL_SPECTATOR) != 0 ? MAX_SPEC_ID_RANGE : MAX_ID_RANGE));
+	Vector vecEnd = vecSrc + (gpGlobals->v_forward * ((pev->flags & FL_SPECTATOR) != 0 ? MAX_SPEC_ID_RANGE :
+#ifdef REGAMEDLL_ADD
+		(g_psv_zmax ? g_psv_zmax->value : MAX_ID_RANGE)
+#else
+		MAX_ID_RANGE
+#endif
+	));
 
 	UTIL_TraceLine(vecSrc, vecEnd, dont_ignore_monsters, edict(), &tr);
 

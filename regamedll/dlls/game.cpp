@@ -10,6 +10,7 @@ cvar_t *g_psv_stopspeed   = nullptr;
 cvar_t *g_psv_stepsize    = nullptr;
 cvar_t *g_psv_clienttrace = nullptr;
 cvar_t *g_psv_maxvelocity = nullptr;
+cvar_t *g_psv_zmax        = nullptr;
 
 cvar_t displaysoundlist      = { "displaysoundlist", "0", 0, 0.0f, nullptr };
 cvar_t timelimit             = { "mp_timelimit", "0", FCVAR_SERVER, 0.0f, nullptr };
@@ -274,6 +275,7 @@ void EXT_FUNC GameDLLInit()
 	g_psv_stepsize    = CVAR_GET_POINTER("sv_stepsize");
 	g_psv_clienttrace = CVAR_GET_POINTER("sv_clienttrace");
 	g_psv_maxvelocity = CVAR_GET_POINTER("sv_maxvelocity");
+	g_psv_zmax        = CVAR_GET_POINTER("sv_zmax");
 
 	CVAR_REGISTER(&displaysoundlist);
 	CVAR_REGISTER(&timelimit);
