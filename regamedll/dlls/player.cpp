@@ -4281,7 +4281,19 @@ void CBasePlayer::PlayerUse()
 				if (legacy_vehicle_block.value == 0)
 					return;
 #endif
-				((CFuncVehicle *)pTrain)->m_pDriver = nullptr;
+				CFuncVehicle *pVehicle = (CFuncVehicle *)pTrain;
+				pVehicle->m_pDriver = nullptr;
+#ifdef REGAMEDLL_FIXES
+				if (Q_abs(pTrain->pev->speed) < 50)
+				{
+					pVehicle->StopSound();
+					pVehicle->SetThink(nullptr);
+					pTrain->pev->speed = 0;
+					pTrain->pev->velocity = g_vecZero;
+					pTrain->pev->avelocity = g_vecZero;
+					pVehicle->m_fEngineOn = FALSE;
+				}
+#endif
 			}
 			return;
 		}
@@ -4299,8 +4311,18 @@ void CBasePlayer::PlayerUse()
 
 				if (pTrain->Classify() == CLASS_VEHICLE)
 				{
+					CFuncVehicle *pVehicle = (CFuncVehicle *)pTrain;
+#ifdef REGAMEDLL_FIXES
+					if (!pVehicle->m_fEngineOn)
+					{
+						EMIT_SOUND(ENT(pev), CHAN_ITEM, "plats/vehicle_ignition.wav", 0.8, ATTN_NORM);
+						pVehicle->m_fEngineOn = TRUE;
+						pVehicle->UpdateSound();
+					}
+#else
 					EMIT_SOUND(ENT(pev), CHAN_ITEM, "plats/vehicle_ignition.wav", 0.8, ATTN_NORM);
-					((CFuncVehicle *)pTrain)->m_pDriver = this;
+#endif
+					pVehicle->m_pDriver = this;
 				}
 				else
 					EMIT_SOUND(ENT(pev), CHAN_ITEM, "plats/train_use1.wav", 0.8, ATTN_NORM);
