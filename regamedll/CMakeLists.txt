@@ -41,7 +41,7 @@ set(LINK_LIBS dl)
 
 # do not strip debuginfo during link
 if (NOT DEBUG)
-	set(LINK_FLAGS "-s")
+	set(LINK_FLAGS "")
 endif()
 
 # add -m32 flag only on 64-bit systems, if building for 64-bit wasn't enabled with XASH_COMPAT
