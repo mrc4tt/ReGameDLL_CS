@@ -128,7 +128,7 @@ fi
 # Build output (cmake/make, every compiler call) goes to a log per step; only the summary
 # lines are shown, and the end of the log when a step fails.
 LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/local-release/$NAME"
-SUMMARY='^==> |^== |Tests executed|test failures|Unittests|^\[(OK|SKIP|FAIL)\]|Assertion failed|CRC32|compiler warnings hidden'
+SUMMARY='^==> |^== |Tests executed|Unittests (OK|FAILED)|Failure in test| < (CXXABI|GLIBC|GLIBCXX)_|Assertion failed|Engine CRC32|compiler warnings hidden'
 step() { # step <log name> <command...>
 	local name=$1 log="$LOGDIR/build-$1.log"; shift
 	mkdir -p "$LOGDIR"
