@@ -72,7 +72,7 @@ class Project:
             for x in pg:
                 if self.cond(x.get("Condition")):
                     self.props[tag(x)] = (x.text or "").strip()
-        self.macros["TargetName"] = self.props.get("TargetName") or self.macros["ProjectName"]
+        self.macros["TargetName"] = self.expand(self.props.get("TargetName")) or self.macros["ProjectName"]
         self.defs = {}  # section -> {key: value}
         for idg in self.root.findall("m:ItemDefinitionGroup", NS):
             if not self.cond(idg.get("Condition")):
@@ -238,6 +238,11 @@ def build(path, a, depth=0):
     p = Project(path, config, a.platform, os.path.dirname(a.sln) if a.sln else None, a.toolset)
     ctype = p.props.get("ConfigurationType", "Application")
     name = p.macros["TargetName"]
+    if ctype in ("Makefile", "Utility"):
+        # NMake/utility projects only run commands (e.g. appversion generation); the
+        # release scripts do that work themselves before building.
+        warn("%s is a %s project, skipped: its outputs must already exist" % (p.macros["ProjectName"], ctype))
+        return None
     obj = os.path.join(a.out, "obj", p.macros["ProjectName"] + "-" + config.replace(" ", "_"))
     os.makedirs(obj, exist_ok=True)
     print("== %s%s (%s|%s, %s)" % ("  " * depth, name, config, a.platform, ctype), flush=True)
@@ -246,7 +251,9 @@ def build(path, a, depth=0):
     extra_libs = []
     for inc, meta in p.items("ProjectReference"):
         if meta.get("LinkLibraryDependencies", "true") != "false":
-            extra_libs.append(build(p.src(inc), a, depth + 1))
+            lib = build(p.src(inc), a, depth + 1)
+            if lib and lib.endswith(".lib"):
+                extra_libs.append(lib)
 
     base = p.defs.get("ClCompile", {})
     pch_obj = None
