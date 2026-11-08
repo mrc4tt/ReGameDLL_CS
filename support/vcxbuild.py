@@ -64,6 +64,9 @@ class Project:
             "ProjectDir": os.path.relpath(self.dir) + os.sep,
             "SolutionDir": os.path.relpath(solution_dir or self.dir) + os.sep,
             "ProjectName": os.path.splitext(os.path.basename(path))[0],
+            # Set by MSBuild itself; nothing here depends on their values.
+            "VisualStudioVersion": "17.0",
+            "VCInstallDir": "",
         }
         self.props = {}
         for pg in self.root.findall("m:PropertyGroup", NS):
@@ -206,7 +209,47 @@ def cl_flags(p, s):
             pass  # handled per file, or not relevant for a release build
         else:
             warn("ClCompile/%s=%s not supported, ignored" % (k, v))
-    return [x for x in f if x]
+    return dedupe([x for x in f if x])
+
+
+# Options of which only the last one counts; an earlier one (a default) is dropped so cl
+# does not warn "D9025 overriding X with Y".
+FLAG_GROUPS = [
+    re.compile(r"^/GS-?$"), re.compile(r"^/fp:"), re.compile(r"^/EH"), re.compile(r"^/Oy-?$"),
+    re.compile(r"^/Gy-?$"), re.compile(r"^/GR-?$"), re.compile(r"^/W([0-4]|all)$"),
+    re.compile(r"^/O[12xd]$"), re.compile(r"^/M[TD]d?$"), re.compile(r"^/arch:"),
+    re.compile(r"^/G[dzrv]$"), re.compile(r"^/WX-?$"),
+]
+
+
+def dedupe(flags):
+    out = []
+    for fl in flags:
+        for g in FLAG_GROUPS:
+            if g.match(fl):
+                out = [o for o in out if not g.match(o)]
+                break
+        out.append(fl)
+    return out
+
+
+VERBOSE = bool(os.environ.get("VCXBUILD_VERBOSE"))
+NOISE = re.compile(r"^\s*(Creating library .* and object |Generating code$|Finished generating code$)")
+hidden_warnings = [0]
+
+
+def show(rc, out):
+    """Tool output: everything on failure or with VCXBUILD_VERBOSE=1, otherwise only what is
+    not a warning (warnings of upstream code are counted and summarized at the end)."""
+    lines = [l for l in out.splitlines() if not NOISE.match(l)]
+    if VERBOSE or rc:
+        if lines:
+            print("\n".join(lines))
+        return
+    keep = [l for l in lines if "warning" not in l]
+    hidden_warnings[0] += len(lines) - len(keep)
+    if keep:
+        print("\n".join(keep))
 
 
 def run(cmd):
@@ -238,10 +281,13 @@ def build(path, a, depth=0):
     p = Project(path, config, a.platform, os.path.dirname(a.sln) if a.sln else None, a.toolset)
     ctype = p.props.get("ConfigurationType", "Application")
     name = p.macros["TargetName"]
+    p.macros["OutDir"] = a.out + os.sep
+    p.macros["TargetExt"] = {"DynamicLibrary": ".dll", "Application": ".exe", "StaticLibrary": ".lib"}.get(ctype, "")
     if ctype in ("Makefile", "Utility"):
         # NMake/utility projects only run commands (e.g. appversion generation); the
         # release scripts do that work themselves before building.
-        warn("%s is a %s project, skipped: its outputs must already exist" % (p.macros["ProjectName"], ctype))
+        if VERBOSE:
+            print("vcxbuild: %s is a %s project, skipped: its outputs must already exist" % (p.macros["ProjectName"], ctype))
         return None
     obj = os.path.join(a.out, "obj", p.macros["ProjectName"] + "-" + config.replace(" ", "_"))
     os.makedirs(obj, exist_ok=True)
@@ -290,15 +336,13 @@ def build(path, a, depth=0):
         pch_obj = jobs.pop(0)
     if pch_obj:
         rc, out = run(pch_obj[0])
-        if out:
-            print(out)
+        show(rc, out)
         if rc:
             sys.exit("vcxbuild: %s failed" % pch_obj[2])
         objs.append(pch_obj[1])
     with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
         for (cmd, o, src), (rc, out) in zip(jobs, ex.map(lambda j: run(j[0]), jobs)):
-            if out:
-                print(out)
+            show(rc, out)
             if rc:
                 print("vcxbuild: FAILED %s" % src, file=sys.stderr)
                 failed = True
@@ -315,8 +359,7 @@ def build(path, a, depth=0):
         cmd = [os.path.join(TOOLS, "rc"), "/nologo"] + ["/d" + d for d in split_list(p.expand(rcd.get("PreprocessorDefinitions", "")))]
         cmd += ["/i" + winpath(os.path.dirname(src) or "."), "/fo" + winpath(res), winpath(src)]
         rc, out = run(cmd)
-        if out:
-            print(out)
+        show(rc, out)
         if rc:
             sys.exit("vcxbuild: resource %s failed" % src)
         objs.append(res)
@@ -326,8 +369,7 @@ def build(path, a, depth=0):
         target = os.path.join(a.out, name + ".lib")
         cmd = [os.path.join(TOOLS, "lib"), "/nologo"] + (["/LTCG"] if ltcg else []) + ["/OUT:" + winpath(target)]
         rc, out = run(cmd + [winpath(o) for o in objs])
-        if out:
-            print(out)
+        show(rc, out)
         if rc:
             sys.exit("vcxbuild: lib %s failed" % name)
         return target
@@ -374,8 +416,7 @@ def build(path, a, depth=0):
             warn("Link/%s=%s not supported, ignored" % (k, v))
     cmd = [os.path.join(TOOLS, "link")] + [x for x in f if x] + [winpath(o) for o in objs] + [winpath(x) for x in extra_libs] + libs
     rc, out = run(cmd)
-    if out:
-        print(out)
+    show(rc, out)
     if rc:
         sys.exit("vcxbuild: link %s failed" % name)
     return target
@@ -393,6 +434,8 @@ def main():
     a = ap.parse_args()
     a.out = os.path.relpath(os.path.join(a.out, a.config.replace(" ", "_")))
     print(build(a.project, a))
+    if hidden_warnings[0]:
+        print("vcxbuild: %d compiler warnings hidden (VCXBUILD_VERBOSE=1 shows them)" % hidden_warnings[0])
 
 
 if __name__ == "__main__":
