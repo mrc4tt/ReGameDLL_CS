@@ -21,3 +21,4 @@
 regamedll/version/appversion.h
 regamedll/msvc/PublishPath*.txt
 publish
+build-win/

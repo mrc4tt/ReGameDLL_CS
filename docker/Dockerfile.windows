@@ -1,0 +1,6 @@
+# Windows compile: real MSVC under Wine, msvc-wine:latest as built on RE by
+# `server-ops msvc-image` (https://github.com/mstorsjo/msvc-wine). Used as is;
+# running the results (unittests, rcedit) happens in Dockerfile.wine32.
+FROM msvc-wine:latest
+RUN command -v git >/dev/null || (apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*)
+WORKDIR /src
