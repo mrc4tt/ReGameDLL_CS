@@ -125,17 +125,33 @@ if [[ "$NEW" != "$FILE_VER" ]] && (( ! DRY )); then
 fi
 
 # --- build (appversion.h = version.h + commit count, so after the bump commit) -------
+# Build output (cmake/make, every compiler call) goes to a log per step; only the summary
+# lines are shown, and the end of the log when a step fails.
+LOGDIR="${XDG_CACHE_HOME:-$HOME/.cache}/local-release/$NAME"
+SUMMARY='^==> |^== |Tests executed|test failures|Unittests|^\[(OK|SKIP|FAIL)\]|Assertion failed|CRC32|compiler warnings hidden'
+step() { # step <log name> <command...>
+	local name=$1 log="$LOGDIR/build-$1.log"; shift
+	mkdir -p "$LOGDIR"
+	if "$@" > "$log" 2>&1; then
+		grep -E "$SUMMARY" "$log" | sed 's/^/   /' || true
+	else
+		echo "== $name FAILED, end of $log:" >&2
+		tail -40 "$log" >&2
+		die "$name failed (full log: $log)"
+	fi
+}
+
 echo "== linux: docker image $IMAGE"
 docker build -q -t "$IMAGE" -f docker/Dockerfile docker >/dev/null
-docker run --rm -v "$ROOT:/src" -w /src -u "$(id -u):$(id -g)" -e HOME=/tmp "$IMAGE"
+step linux docker run --rm -v "$ROOT:/src" -w /src -u "$(id -u):$(id -g)" -e HOME=/tmp "$IMAGE"
 if (( WINDOWS )); then
 	echo "== windows: docker images $WIN_IMAGE, $WINE_IMAGE"
 	docker build -q -t "$WIN_IMAGE" -f docker/Dockerfile.windows docker >/dev/null
 	docker build -q -t "$WINE_IMAGE" -f docker/Dockerfile.wine32 docker >/dev/null
-	docker run --rm -v "$ROOT:/src" -w /src "$WIN_IMAGE" bash docker/build-windows.sh compile
+	step windows-compile docker run --rm -v "$ROOT:/src" -w /src "$WIN_IMAGE" bash docker/build-windows.sh compile
 	sign=()
 	[[ -z "$PFX_FILE" ]] || sign=(-v "$PFX_FILE:/run/sign/cert.pfx:ro" -v "$PFX_PASS_FILE:/run/sign/pass:ro" -e PFX_TIMESTAMP="$PFX_TIMESTAMP")
-	docker run --rm -v "$ROOT:/src" -w /src "${sign[@]}" -e COMMIT="$(git rev-parse HEAD)" -e SLUG="$SLUG" "$WINE_IMAGE" bash docker/build-windows.sh finish
+	step windows-finish docker run --rm -v "$ROOT:/src" -w /src "${sign[@]}" -e COMMIT="$(git rev-parse HEAD)" -e SLUG="$SLUG" "$WINE_IMAGE" bash docker/build-windows.sh finish
 fi
 
 APP_VERSION=$(sed -n 's/^#define APP_VERSION_STRD[[:space:]]*"\([^"]*\)".*/\1/p' publish/appversion.h)
