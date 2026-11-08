@@ -78,12 +78,24 @@ else NEW=$(next "${BUMP:-patch}"); fi
 TAG="v$NEW"
 tag_exists "$NEW" && die "tag $TAG already exists"
 
+# --- optional signing, configured on the release machine only -----------------------
+# ${LOCAL_RELEASE_SIGNING:-$HOME/.config/local-release/signing.env}, shell syntax:
+#   GPG_KEY=<fingerprint>        detach-sign the zip; zip.asc and the public key are uploaded
+#   PFX_FILE=/path/cert.pfx      Authenticode-sign the Windows binaries (osslsigncode)
+#   PFX_PASS_FILE=/path/pass     password of the PFX
+#   PFX_TIMESTAMP=<RFC 3161 URL> default http://timestamp.digicert.com
+GPG_KEY="" PFX_FILE="" PFX_PASS_FILE="" PFX_TIMESTAMP=http://timestamp.digicert.com
+SIGN_ENV=${LOCAL_RELEASE_SIGNING:-$HOME/.config/local-release/signing.env}
+if [[ -r "$SIGN_ENV" ]]; then . "$SIGN_ENV"; fi
+
 # --- preflight ---------------------------------------------------------------------
 [[ "$(git branch --show-current)" == "$BRANCH" ]] || die "not on $BRANCH"
 [[ -z "$(git status --porcelain --untracked-files=no)" ]] || die "working tree has changes"
 git fetch -q "$REMOTE" "$BRANCH" --tags
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse "$REMOTE/$BRANCH")" ]] || die "$BRANCH is not $REMOTE/$BRANCH"
 command -v docker >/dev/null || die "docker missing"
+[[ -z "$GPG_KEY" ]] || gpg --batch --list-secret-keys "$GPG_KEY" >/dev/null 2>&1 || die "GPG_KEY $GPG_KEY: no secret key"
+[[ -z "$PFX_FILE" ]] || { [[ -r "$PFX_FILE" && -r "$PFX_PASS_FILE" ]] || die "PFX_FILE/PFX_PASS_FILE not readable"; }
 (( ! WINDOWS )) || docker image inspect msvc-wine:latest >/dev/null 2>&1 || die "msvc-wine:latest missing (on RE: server-ops msvc-image), or use --no-windows"
 git submodule update -q --init --recursive
 (( DRY )) || gh auth status >/dev/null 2>&1 || die "gh is not logged in"
@@ -121,7 +133,9 @@ if (( WINDOWS )); then
 	docker build -q -t "$WIN_IMAGE" -f docker/Dockerfile.windows docker >/dev/null
 	docker build -q -t "$WINE_IMAGE" -f docker/Dockerfile.wine32 docker >/dev/null
 	docker run --rm -v "$ROOT:/src" -w /src "$WIN_IMAGE" bash docker/build-windows.sh compile
-	docker run --rm -v "$ROOT:/src" -w /src -e COMMIT="$(git rev-parse HEAD)" "$WINE_IMAGE" bash docker/build-windows.sh finish
+	sign=()
+	[[ -z "$PFX_FILE" ]] || sign=(-v "$PFX_FILE:/run/sign/cert.pfx:ro" -v "$PFX_PASS_FILE:/run/sign/pass:ro" -e PFX_TIMESTAMP="$PFX_TIMESTAMP")
+	docker run --rm -v "$ROOT:/src" -w /src "${sign[@]}" -e COMMIT="$(git rev-parse HEAD)" -e SLUG="$SLUG" "$WINE_IMAGE" bash docker/build-windows.sh finish
 fi
 
 APP_VERSION=$(sed -n 's/^#define APP_VERSION_STRD[[:space:]]*"\([^"]*\)".*/\1/p' publish/appversion.h)
@@ -133,10 +147,18 @@ STAGE=$(mktemp -d)
 cp -r publish/bin publish/cssdk "$STAGE/"
 for d in "$STAGE"/bin/*/cstrike; do cp -r publish/dist/. "$d/"; done
 ZIP="$ROOT/publish/regamedll-bin-$APP_VERSION.zip"
-rm -f publish/*.zip
+rm -f publish/*.zip publish/*.asc
 (cd "$STAGE" && zip -qr "$ZIP" bin cssdk)
 rm -rf "$STAGE"
 echo "== packaged $(basename "$ZIP") ($(du -h "$ZIP" | cut -f1)): $(cd publish && ls bin/*/cstrike/dlls/* | tr '\n' ' ')"
+ASSETS=("$ZIP")
+if [[ -n "$GPG_KEY" ]]; then
+	gpg --batch --yes --local-user "$GPG_KEY" --detach-sign --armor -o "$ZIP.asc" "$ZIP"
+	gpg --batch --verify "$ZIP.asc" "$ZIP" 2>/dev/null || die "signature of $(basename "$ZIP") does not verify"
+	gpg --batch --yes --armor --export "$GPG_KEY" > "$ROOT/publish/signing-key.asc"
+	ASSETS+=("$ZIP.asc" "$ROOT/publish/signing-key.asc")
+	echo "== signed $(basename "$ZIP") with $GPG_KEY"
+fi
 
 if (( DRY )); then
 	echo "== dry run: would tag $TAG, push $BRANCH + $TAG to $REMOTE and release $SLUG $TAG"
@@ -155,11 +177,15 @@ NOTES=$(mktemp)
 		git log --no-merges -30 --format='- %s (%h)' HEAD | grep -v '^- bump [0-9]'
 	fi
 	(( WINDOWS )) || { echo; echo "Linux only (no Windows build)."; }
+	if [[ -n "$GPG_KEY" ]]; then
+		echo
+		echo "Signed with GPG key \`$GPG_KEY\` (\`signing-key.asc\`): \`gpg --import signing-key.asc && gpg --verify $(basename "$ZIP").asc\`"
+	fi
 } > "$NOTES"
 
 git tag -a "$TAG" -m "ReGameDLL_CS $NEW"
 git push -q "$REMOTE" "$BRANCH"
 ARMED=0                       # master is pushed: no undo from here on
 git push -q "$REMOTE" "$TAG"
-gh release create "$TAG" "$ZIP" -R "$SLUG" --title "$TAG" --notes-file "$NOTES" --latest
+gh release create "$TAG" "${ASSETS[@]}" -R "$SLUG" --title "$TAG" --notes-file "$NOTES" --latest
 echo "== released https://github.com/$SLUG/releases/tag/$TAG"

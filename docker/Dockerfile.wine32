@@ -6,7 +6,7 @@ FROM ubuntu:24.04
 RUN dpkg --add-architecture i386 \
  && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      wine32:i386 wine curl ca-certificates \
+      wine32:i386 wine curl ca-certificates osslsigncode \
  && rm -rf /var/lib/apt/lists/*
 
 ARG RCEDIT_SHA256=38fb5e935d7cb58d7a98b4ed8f876c83f5db032bcd0329b0a4de4e4a1de876b6

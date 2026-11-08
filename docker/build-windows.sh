@@ -3,7 +3,7 @@
 # (cl/link from msvc-wine) in place of msbuild. Two steps, two images:
 #
 #   build-windows.sh compile   in Dockerfile.windows (msvc-wine): Tests, Release, Release Play
-#   build-windows.sh finish    in Dockerfile.wine32: unittests under Wine, publish/, rcedit
+#   build-windows.sh finish    in Dockerfile.wine32 (Authenticode when /run/sign/cert.pfx is mounted): unittests under Wine, publish/, rcedit
 #                              (needs COMMIT in the environment)
 set -euo pipefail
 SLN=msvc/ReGameDLL.sln
@@ -47,6 +47,13 @@ finish)
 		--set-version-string CompanyName "ReHLDS Dev Team" \
 		--set-version-string LegalCopyright "Copyright 2025 Valve, ReHLDS DevTeam" \
 		--set-icon regamedll/msvc/icon.ico
+	if [ -f /run/sign/cert.pfx ]; then
+		echo "==> Authenticode signing"
+		f=publish/bin/win32/cstrike/dlls/mp.dll
+		osslsigncode sign -pkcs12 /run/sign/cert.pfx -readpass /run/sign/pass -h sha256 \
+			-n "Regamedll_CS - mp.dll" -i "https://github.com/$SLUG" -ts "$PFX_TIMESTAMP" -in "$f" -out "$f.signed"
+		mv "$f.signed" "$f"
+	fi
 	chown -R "$owner" build-win publish
 	;;
 *) echo "usage: build-windows.sh compile|finish" >&2; exit 2 ;;
