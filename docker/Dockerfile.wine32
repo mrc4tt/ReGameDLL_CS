@@ -1,0 +1,19 @@
+# 32-bit Wine for the Win32 build products: runs the unittests and rcedit
+# (version resource + icon, like the windows job of build.yml). Kept apart from
+# msvc-wine:latest, which compiles: adding wine32 there breaks its wine64 setup.
+FROM ubuntu:24.04
+
+RUN dpkg --add-architecture i386 \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      wine32:i386 wine curl ca-certificates osslsigncode \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG RCEDIT_SHA256=38fb5e935d7cb58d7a98b4ed8f876c83f5db032bcd0329b0a4de4e4a1de876b6
+RUN curl -sSfL -o /opt/rcedit-x86.exe https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x86.exe \
+ && echo "$RCEDIT_SHA256  /opt/rcedit-x86.exe" | sha256sum -c -
+
+ENV WINEDEBUG=-all WINEPREFIX=/opt/wine32 WINEARCH=win32
+RUN wineboot -i >/dev/null 2>&1; wineserver -w
+
+WORKDIR /src
